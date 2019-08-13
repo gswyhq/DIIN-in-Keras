@@ -32,7 +32,9 @@ def get_word2vec_file_path(file_path):
 
     download_url = 'http://nlp.stanford.edu/data/glove.840B.300d.zip'
     cache_dir = path.join(path.abspath(path.dirname(__file__)), 'data')
-    glove_file_path = cache_dir + '/glove.840B.300d.txt'
+    # glove_file_path = cache_dir + '/glove.840B.300d.txt'
+    print('为了测试，仅仅加载20万的词向量')
+    glove_file_path = cache_dir + '/glove.840B.300d_head200000.txt'
 
     if path.exists(glove_file_path):
         return glove_file_path

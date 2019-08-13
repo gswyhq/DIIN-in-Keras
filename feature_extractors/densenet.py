@@ -8,7 +8,8 @@ from __future__ import division
 from __future__ import print_function
 
 import keras.backend as K
-from keras.applications.imagenet_utils import _obtain_input_shape
+#from keras.applications.imagenet_utils import _obtain_input_shape
+from keras_applications.imagenet_utils import _obtain_input_shape
 from keras.engine import Model
 from keras.layers import Input, Flatten
 from keras.layers.convolutional import Conv2D

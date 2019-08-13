@@ -27,8 +27,8 @@ class BasePreprocessor(object):
         self.char_to_id = {}
         self.vectors = []
         self.part_of_speech_to_id = {}
-        self.unique_words = set()
-        self.unique_parts_of_speech = set()
+        self.unique_words = set()  # 所有的单词集合
+        self.unique_parts_of_speech = set() # 所有单词对应的词性集合
 
     @staticmethod
     def load_data(file_path):
@@ -92,18 +92,48 @@ class BasePreprocessor(object):
 
     def get_all_words_with_parts_of_speech(self, file_paths):
         """
-        :param file_paths: paths to files where the data is stored
+        :param file_paths: 数据文件路径
         :return: words, parts_of_speech
         """
-        all_words = []
-        all_parts_of_speech = []
+        all_words = [] # 所有的数据（训练、验证、测试）中的词组成的列表
+        all_parts_of_speech = [] # 所有的数据（训练、验证、测试）中的词对应的词性组成的列表
+        # ['/home/gswyhq/github_projects/DIIN-in-Keras/data/snli_1.0/snli_1.0_train.jsonl',
+        # '/home/gswyhq/github_projects/DIIN-in-Keras/data/snli_1.0/snli_1.0_test.jsonl',
+        # '/home/gswyhq/github_projects/DIIN-in-Keras/data/snli_1.0/snli_1.0_dev.jsonl']
         for file_path in file_paths:
             data = self.load_data(file_path=file_path)
+            # data[0]
+            # Out[18]:
+            # {'annotator_labels': ['neutral',
+            #                       'entailment',
+            #                       'neutral',
+            #                       'neutral',
+            #                       'neutral'],
+            #  'captionID': '4705552913.jpg#2',
+            #  'gold_label': 'neutral',
+            #  'pairID': '4705552913.jpg#2r1n',
+            #  'sentence1': 'Two women are embracing while holding to go packages.',
+            #  'sentence1_binary_parse': '( ( Two women ) ( ( are ( embracing ( while ( holding ( to ( go packages ) ) ) ) ) ) . ) )',
+            #  'sentence1_parse': '(ROOT (S (NP (CD Two) (NNS women)) (VP (VBP are) (VP (VBG embracing) (SBAR (IN while) (S (NP (VBG holding)) (VP (TO to) (VP (VB go) (NP (NNS packages)))))))) (. .)))',
+            #  'sentence2': 'The sisters are hugging goodbye while holding to go packages after just eating lunch.',
+            #  'sentence2_binary_parse': '( ( The sisters ) ( ( are ( ( hugging goodbye ) ( while ( holding ( to ( ( go packages ) ( after ( just ( eating lunch ) ) ) ) ) ) ) ) ) . ) )',
+            #  'sentence2_parse': '(ROOT (S (NP (DT The) (NNS sisters)) (VP (VBP are) (VP (VBG hugging) (NP (UH goodbye)) (PP (IN while) (S (VP (VBG holding) (S (VP (TO to) (VP (VB go) (NP (NNS packages)) (PP (IN after) (S (ADVP (RB just)) (VP (VBG eating) (NP (NN lunch))))))))))))) (. .)))'}
 
             for sample in tqdm(data):
+                # sentence1_parse, sentence2_parse
+                # premise, hypothesis
+                # Out[21]:
+                # ('(ROOT (S (NP (CD Two) (NNS women)) (VP (VBP are) (VP (VBG embracing) (SBAR (IN while) (S (NP (VBG holding)) (VP (TO to) (VP (VB go) (NP (NNS packages)))))))) (. .)))',
+                # '(ROOT (S (NP (DT The) (NNS sisters)) (VP (VBP are) (VP (VBG hugging) (NP (UH goodbye)) (PP (IN while) (S (VP (VBG holding) (S (VP (TO to) (VP (VB go) (NP (NNS packages)) (PP (IN after) (S (ADVP (RB just)) (VP (VBG eating) (NP (NN lunch))))))))))))) (. .)))')
                 premise, hypothesis = self.get_sentences(sample)
                 premise_words,    premise_speech    = self.get_words_with_part_of_speech(premise)
+                # print(premise_words, premise_speech)
+                # ['Two', 'women', 'are', 'embracing', 'while', 'holding', 'to', 'go', 'packages', '.']
+                # ['CD', 'NNS', 'VBP', 'VBG', 'IN', 'VBG', 'TO', 'VB', 'NNS', '.']  # 英语文档的词性标记列表
                 hypothesis_words, hypothesis_speech = self.get_words_with_part_of_speech(hypothesis)
+                # print(hypothesis_words, hypothesis_speech)
+                # ['The', 'sisters', 'are', 'hugging', 'goodbye', 'while', 'holding', 'to', 'go', 'packages', 'after','just', 'eating', 'lunch', '.']
+                # ['DT', 'NNS', 'VBP', 'VBG', 'UH', 'IN', 'VBG', 'TO', 'VB', 'NNS', 'IN', 'RB', 'VBG', 'NN', '.']
                 all_words           += premise_words  + hypothesis_words
                 all_parts_of_speech += premise_speech + hypothesis_speech
 
@@ -124,7 +154,7 @@ class BasePreprocessor(object):
 
     def init_word_to_vectors(self, vectors_file_path, needed_words, normalize=False, max_loaded_word_vectors=None):
         """
-        Initialize:
+        对语料中的词，映射对应的词向量，及word2id:
             {word -> vec} mapping
             {word -> id}  mapping
             [vectors] array
@@ -134,16 +164,18 @@ class BasePreprocessor(object):
         :param normalize: normalize word vectors
         """
         needed_words = set(needed_words)
+        # 词向量对应的词列表，及对应词向量
         words, self.vectors = self.load_word_vectors(file_path=vectors_file_path,
                                                      normalize=normalize,
                                                      max_words=max_loaded_word_vectors)
-        word_vector_size = self.vectors.shape[-1]
+        word_vector_size = self.vectors.shape[-1]  # 词向量的维数
         self.vectors = list(self.vectors)
 
-        present_words = needed_words.intersection(words)
-        not_present_words = needed_words - present_words
+        present_words = needed_words.intersection(words)  # 语料中的词与词向量的交集
+        not_present_words = needed_words - present_words  # 没有对应词向量的词列表；
         print('#Present words:', len(present_words), '\t#Not present words', len(not_present_words))
 
+        # 对应缺失词向量的词，随机初始化生成对应的词向量；
         not_present_words, not_present_vectors = self.get_not_present_word_vectors(not_present_words=not_present_words,
                                                                                    word_vector_size=word_vector_size,
                                                                                    normalize=normalize)
@@ -160,7 +192,7 @@ class BasePreprocessor(object):
 
     def init_chars(self, words):
         """
-        Init char -> id mapping
+        获取所有的字集合，及char2id
         """
         chars = set()
         for word in words:
@@ -170,6 +202,7 @@ class BasePreprocessor(object):
         print('Chars:', chars)
 
     def init_parts_of_speech(self, parts_of_speech):
+        # 词性及其对应的id;
         self.part_of_speech_to_id = {part: i+1 for i, part in enumerate(parts_of_speech)}
         print('Parts of speech:', parts_of_speech)
 
@@ -190,18 +223,37 @@ class BasePreprocessor(object):
         return res
 
     def parse_sentence(self, sentence, max_words, chars_per_word):
+        """
+        解析一个句子，返回对应的词列表、词性列表、词id列表、词性id列表、词性填充补全矩阵；字填充补全矩阵；
+        :param sentence: 输出的句子
+        :param max_words: 可处理的最大词数
+        :param chars_per_word: 每个词最大的字符数；
+        :return: 
+        """
         # Words
         words, parts_of_speech = self.get_words_with_part_of_speech(sentence)
+        # ['Two', 'women', 'are', 'embracing', 'while', 'holding', 'to', 'go', 'packages', '.']
+        # ['CD', 'NNS', 'VBP', 'VBG', 'IN', 'VBG', 'TO', 'VB', 'NNS', '.']
         word_ids = [self.word_to_id[word] for word in words]
 
         # Syntactical features
         syntactical_features = [self.part_of_speech_to_id[part] for part in parts_of_speech]
-        syntactical_one_hot = np.eye(len(self.part_of_speech_to_id) + 2)[syntactical_features]  # Convert to 1-hot
+        syntactical_one_hot = np.eye(len(self.part_of_speech_to_id) + 2)[syntactical_features]  # 将词性转换成0-1向量；
 
         # Chars
         chars = [[self.char_to_id[c] for c in word] for word in words]
-        chars = pad_sequences(chars, maxlen=chars_per_word, padding='post', truncating='post')
-        
+        chars = pad_sequences(chars, maxlen=chars_per_word, padding='post', truncating='post')  # 不足长度在尾部补0，超长截断
+        # chars.shape
+        # Out[60]: (10, 16)
+        # syntactical_features
+        # Out[63]: [33, 3, 36, 30, 39, 30, 29, 11, 3, 41]
+        # syntactical_one_hot.shape
+        # Out[64]: (10, 44)
+        # pad(syntactical_one_hot, max_words).shape
+        # Out[61]: (32, 44)
+        # pad(chars, max_words).shape
+        # Out[65]: (32, 16)
+
         return (words, parts_of_speech, np.array(word_ids, copy=False),
                 syntactical_features, pad(syntactical_one_hot, max_words),
                 pad(chars, max_words))
@@ -218,6 +270,7 @@ class BasePreprocessor(object):
                   premise_syntactical_one_hot, hypothesis_syntactical_one_hot,
                   premise_exact_match, hypothesis_exact_match)
         """
+        # 词列表、词性列表、词id列表、词性id列表、词性填充补全矩阵；字填充补全矩阵；
         (premise_words, premise_parts_of_speech, premise_word_ids,
          premise_syntactical_features, premise_syntactical_one_hot,
          premise_chars) = self.parse_sentence(sentence=premise, max_words=max_words_p, chars_per_word=chars_per_word)
@@ -234,8 +287,11 @@ class BasePreprocessor(object):
             res = [(word in target_words) for word in source_words]
             return np.array(res, copy=False)
 
+        # 对应词在对方中是否存在
         premise_exact_match    = calculate_exact_match(premise_words, hypothesis_words)
+        # array([False, False,  True, False,  True,  True,  True,  True,  True, True])
         hypothesis_exact_match = calculate_exact_match(hypothesis_words, premise_words)
+        # array([False, False,  True, False, False,  True,  True,  True,  True, True, False, False, False, False,  True])
 
         return (premise_word_ids, hypothesis_word_ids,
                 premise_chars, hypothesis_chars,
@@ -256,18 +312,24 @@ class BasePreprocessor(object):
         # res = [premise_word_ids, hypothesis_word_ids, premise_chars, hypothesis_chars,
         # premise_syntactical_one_hot, hypothesis_syntactical_one_hot, premise_exact_match, hypothesis_exact_match]
         res = [[], [], [], [], [], [], [], [], []]
+        # 句1词id列表,句2词id列表,句1字填充补全矩阵,句2字填充补全矩阵,句1词性填充补全矩阵,句2词性填充补全矩阵,句1对应词对方是否包含,句2对应词对方是否包含,标签
 
         data = self.load_data(input_file_path)
         for sample in tqdm(data):
             # As stated in paper: The labels are "entailment", "neutral", "contradiction" and "-".
             # "-"  shows that annotators can't reach consensus with each other, thus removed during training and testing
-            label = self.get_label(sample=sample)
+            label = self.get_label(sample=sample)  # 可选的标签值有： {'-', 'contradiction', 'entailment', 'neutral'}
             if label == '-':
                 continue
             premise, hypothesis = self.get_sentences(sample=sample)
+            # (ROOT (S (NP (CD Two) (NNS women)) (VP (VBP are) (VP (VBG embracing) (SBAR (IN while) (S (NP (VBG holding)) (VP (TO to) (VP (VB go) (NP (NNS packages)))))))) (. .)))
+            # (ROOT (S (NP (DT The) (NNS sisters)) (VP (VBP are) (VP (VBG hugging) (NP (UH goodbye)) (PP (IN while) (S (VP (VBG holding) (S (VP (TO to) (VP (VB go) (NP (NNS packages)) (PP (IN after) (S (ADVP (RB just)) (VP (VBG eating) (NP (NN lunch))))))))))))) (. .)))
+
             sample_inputs = self.parse_one(premise, hypothesis,
                                            max_words_h=max_words_h, max_words_p=max_words_p,
                                            chars_per_word=chars_per_word)
+            # 词id列表，字填充补全矩阵，词性填充补全矩阵，对应词对方是否包含
+
             label = self.label_to_one_hot(label=label)
 
             sample_result = list(sample_inputs) + [label]
@@ -320,13 +382,17 @@ def preprocess(p, h, chars_per_word, preprocessor, save_dir, data_paths,
     preprocessor.init_chars(words=preprocessor.unique_words)
     preprocessor.init_parts_of_speech(parts_of_speech=preprocessor.unique_parts_of_speech)
 
-    # Process and save the data
-    preprocessor.save_word_vectors(word_vector_save_path)
+    # 预处理及保存数据；
+    preprocessor.save_word_vectors(word_vector_save_path)  # 保存相关词（包括缺失词向量的词随机初始化的词向量）的向量到文件
     for dataset, input_path in data_paths:
+        # [('train', '/home/gswyhq/github_projects/DIIN-in-Keras/data/snli_1.0/snli_1.0_train.jsonl'),
+        #  ('test', '/home/gswyhq/github_projects/DIIN-in-Keras/data/snli_1.0/snli_1.0_test.jsonl'),
+        #  ('dev', '/home/gswyhq/github_projects/DIIN-in-Keras/data/snli_1.0/snli_1.0_dev.jsonl')]
         data = preprocessor.parse(input_file_path=input_path,
                                   max_words_p=p,
                                   max_words_h=h,
                                   chars_per_word=chars_per_word)
+        # 句1词id列表,句2词id列表,句1字填充补全矩阵,句2字填充补全矩阵,句1词性填充补全矩阵,句2词性填充补全矩阵,句1对应词对方是否包含,句2对应词对方是否包含,标签
 
         # Determine which part of data we need to dump
         if not include_exact_match:             del data[6:8]  # Exact match feature

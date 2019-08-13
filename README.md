@@ -33,7 +33,7 @@ Several samples from MultiNLI dataset are presented below which are copied from 
 `Encoding`, `Interaction`, and also exponentially `DecayingDropout` can be found in `layers/` package.
 Feature extractor (in our case [DenseNet](https://arxiv.org/abs/1608.06993)) can be found in `feature_extractors/` package.
 L2 optimizer wrapper can be found in `optimizers/`.
-![](images/architecture.png "Architecture")
+
 
 
 ### Instructions
@@ -64,3 +64,16 @@ tensorboard --logdir=./logs
 ### Results
 Currently we managed to obtain `87.34%` accuracy on `SNLI test` set, while the authors obtained `88.0%` accuracy on the same dataset. <br/>
 Our best model can be downloaded from the first release v1.0: https://github.com/YerevaNN/DIIN-in-Keras/releases/download/v1.0/epoch.40-tloss.0.358379300162-tacc.0.873371346062.model
+
+
+Match-LSTM是由(Wang & Jiang,2016)发表在NAACL的论文提出，用于解决NLI(Natural Language Inference，文本蕴含)问题。
+
+premise：前提，代表上下文
+hypothesis：假设，代表一个陈述性的结论 
+
+文本蕴含问题：给定一个premise（前提），根据这个premise去判断相应的hypothesis（假说）正确与否，如果从这个premise中能够推断出这个hypothesis，那么就判断为entailment（蕴含），否则就是contradiction（矛盾）。
+
+
+将premise和hypothesis两句话输入到两个LSTM中，用对应LSTM的隐层输出premise和hypothesis中每个位置对应上下文信息的一种表示，分别对应图中的HsHs和htht
+对于hypothesis中的某个词的表示htihit与premise中每个词的表示HsHs计算得到一个权重向量，然后再对premise中的词进行加权求和，得到hypothesis的htihit在每个时刻对应的注意力向量aiai,即(attention过程)
+把hypothesis中该词的表示htihit和其对应的attention的上下文向量aiai拼接在一起，输入到一个LSTM中，最后时刻的hmhm即hmNhNm作为输出以预测label。

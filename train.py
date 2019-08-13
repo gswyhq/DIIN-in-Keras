@@ -141,6 +141,7 @@ if __name__ == '__main__':
     parser.add_argument('--omit_exact_match',            action='store_true')
     parser.add_argument('--train_word_embeddings',       action='store_true')
     args = parser.parse_args()
+# python train.py --batch_size 70 --eval_interval 500 --train_word_embeddings --char_embed_size 8 --char_conv_filters 100 --char_conv_kernel 5 --dropout_initial_keep_rate 1. --dropout_decay_rate 0.977 --dropout_decay_interval 10000 --first_scale_down_ratio 0.3 --transition_scale_down_ratio 0.5 --growth_rate 20 --layers_per_dense_block 8 --dense_blocks 3 --labels 3 --load_dir ./data --models_dir ./models/ --logdir ./logs --word_vec_path ./data/word-vectors.npy
 
     ''' Prepare data '''
     word_embedding_weights = np.load(args.word_vec_path)
@@ -148,11 +149,11 @@ if __name__ == '__main__':
     test_data  = ChunkDataManager(load_data_path=os.path.join(args.load_dir, 'test')).load()
     dev_data   = ChunkDataManager(load_data_path=os.path.join(args.load_dir, 'dev')).load()
 
-    ''' Getting dimensions of the input '''
-    chars_per_word = train_data[3].shape[-1] if not args.omit_chars else 0
-    syntactical_feature_size = train_data[5].shape[-1] if not args.omit_syntactical_features else 0
+    ''' 获取输入的维度 '''
+    chars_per_word = train_data[3].shape[-1] if not args.omit_chars else 0  # 16
+    syntactical_feature_size = train_data[5].shape[-1] if not args.omit_syntactical_features else 0  # 47
 
-    ''' Prepare the model and optimizers '''
+    ''' 准备模型和优化器 '''
     adam = L2Optimizer(Adam(), args.l2_full_step, args.l2_full_ratio, args.l2_diference_penalty)
     adagrad = L2Optimizer(Adagrad(), args.l2_full_step, args.l2_full_ratio, args.l2_diference_penalty)
     sgd = L2Optimizer(SGD(lr=3e-3), args.l2_full_step, args.l2_full_ratio, args.l2_diference_penalty)
