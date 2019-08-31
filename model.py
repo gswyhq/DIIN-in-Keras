@@ -3,7 +3,7 @@ from keras.engine import Model
 from keras.layers import Input, Dense, Conv2D, Embedding, Conv1D, TimeDistributed, GlobalMaxPooling1D, Concatenate, \
     Reshape
 from keras.models import Sequential
-
+from keras.layers.normalization import BatchNormalization
 from feature_extractors.densenet import DenseNet
 from layers.decaying_dropout import DecayingDropout
 from layers.encoding import Encoding
@@ -88,20 +88,28 @@ class DIIN(Model):
 
         # 2. Character input
         if include_chars:
-            premise_char_input    = Input(shape=(p, chars_per_word,), name='PremiseCharInput')
-            hypothesis_char_input = Input(shape=(h, chars_per_word,), name='HypothesisCharInput')
+            premise_char_input    = Input(shape=(p, ), name='PremiseCharInput')
+            hypothesis_char_input = Input(shape=(h, ), name='HypothesisCharInput')
             inputs.append(premise_char_input)
             inputs.append(hypothesis_char_input)
 
-            # Share weights of character-level embedding for premise and hypothesis
-            character_embedding_layer = TimeDistributed(Sequential([
-                Embedding(input_dim=100, output_dim=char_embedding_size, input_length=chars_per_word),
-                Conv1D(filters=char_conv_filters, kernel_size=char_conv_kernel_size),
-                GlobalMaxPooling1D()
-            ]), name='CharEmbedding')
-            character_embedding_layer.build(input_shape=(None, None, chars_per_word))
-            premise_char_embedding    = character_embedding_layer(premise_char_input)
-            hypothesis_char_embedding = character_embedding_layer(hypothesis_char_input)
+            char_embedding = Embedding(input_dim=word_embedding_weights.shape[0],
+                                       output_dim=word_embedding_weights.shape[1],
+                                       weights=[word_embedding_weights],
+                                       trainable=train_word_embeddings,
+                                       name='CharEmbedding')
+            premise_char_embedding    = char_embedding(premise_char_input)
+            hypothesis_char_embedding = char_embedding(hypothesis_char_input)
+
+            premise_char_embedding    = DecayingDropout(initial_keep_rate=dropout_initial_keep_rate,
+                                                        decay_interval=dropout_decay_interval,
+                                                        decay_rate=dropout_decay_rate,
+                                                        name='PremiseCharEmbeddingDropout')(premise_char_embedding)
+            hypothesis_char_embedding = DecayingDropout(initial_keep_rate=dropout_initial_keep_rate,
+                                                        decay_interval=dropout_decay_interval,
+                                                        decay_rate=dropout_decay_rate,
+                                                        name='HypothesisCharEmbeddingDropout')(hypothesis_char_embedding)
+
             premise_embeddings.append(premise_char_embedding)
             hypothesis_embeddings.append(hypothesis_char_embedding)
 
@@ -143,6 +151,7 @@ class DIIN(Model):
                                          kernel_size=1,
                                          activation=None,
                                          name='FirstScaleDown')(interaction)
+        feature_extractor_input = BatchNormalization()(feature_extractor_input)
         feature_extractor = DenseNet(include_top=False,
                                      input_tensor=Input(shape=K.int_shape(feature_extractor_input)[1:]),
                                      nb_dense_block=nb_dense_blocks,
@@ -155,7 +164,7 @@ class DIIN(Model):
                                    decay_interval=dropout_decay_interval,
                                    decay_rate=dropout_decay_rate,
                                    name='Features')(feature_extractor)
-        out = Dense(units=nb_labels, activation='softmax', name='Output')(features)
+        out = Dense(units=nb_labels, activation='sigmoid', name='Output')(features)
         super(DIIN, self).__init__(inputs=inputs, outputs=out, name=name)
 
 

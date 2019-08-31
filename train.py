@@ -8,10 +8,13 @@ import numpy as np
 from keras.callbacks import TensorBoard
 from keras.optimizers import SGD, Adam, Adagrad
 from tqdm import tqdm
-
+from keras.callbacks import EarlyStopping, ModelCheckpoint
 from model import DIIN
 from optimizers.l2optimizer import L2Optimizer
 from util import ChunkDataManager
+# 引入Tensorboard
+from keras.callbacks import TensorBoard
+from keras.utils import plot_model
 
 
 class Gym(object):
@@ -70,27 +73,28 @@ class Gym(object):
 
         while True:
             if shuffle:
-                random.shuffle(list(zip(train_data)))
-            train_inputs = train_data[:-1]
-            train_labels = train_data[-1]
+                random.shuffle(list(zip(self.train_data)))
+            train_inputs = self.train_data[:-1]
+            train_labels = self.train_data[-1]
 
-            # Evaluate
+            # 评估
             test_loss, dev_loss = self.evaluate(eval_step=eval_step, batch_size=batch_size)
             eval_step += 1
 
-            # Switch optimizer if it's necessary
+            # 若有必要，则更换优化器
             no_progress_steps += 1
             if dev_loss < best_loss:
                 best_loss = dev_loss
                 no_progress_steps = 0
 
-            if no_progress_steps >= self.current_switch_step:
+            # 若连续多少步效果没有改善，则更新优化器
+            if no_progress_steps >= self.current_switch_step: # 3,4,15
                 self.switch_optimizer()
                 no_progress_steps = 0
 
             # Train eval_interval times
             for _ in tqdm(range(eval_interval)):
-                [loss, acc] = model.train_on_batch(
+                [loss, acc] = self.model.train_on_batch(
                     [train_input[train_batch_start: train_batch_start + batch_size] for train_input in train_inputs],
                     train_labels[train_batch_start: train_batch_start + batch_size])
                 self.logger.on_epoch_end(epoch=train_step, logs={'train_acc': acc, 'train_loss': loss})
@@ -100,14 +104,14 @@ class Gym(object):
                     train_batch_start = 0
                     # Shuffle the data after the epoch ends
                     if shuffle:
-                        random.shuffle(list(zip(train_data)))
+                        random.shuffle(list(zip(self.train_data)))
 
     def evaluate(self, eval_step, batch_size=None):
-        [test_loss, test_acc] = model.evaluate(self.test_data[:-1], self.test_data[-1], batch_size=batch_size)
-        [dev_loss,  dev_acc]  = model.evaluate(self.dev_data[:-1],  self.dev_data[-1],  batch_size=batch_size)
+        [test_loss, test_acc] = self.model.evaluate(self.test_data[:-1], self.test_data[-1], batch_size=batch_size)
+        [dev_loss,  dev_acc]  = self.model.evaluate(self.dev_data[:-1],  self.dev_data[-1],  batch_size=batch_size)
         self.logger.on_epoch_end(epoch=eval_step, logs={'test_acc': test_acc, 'test_loss': test_loss})
         self.logger.on_epoch_end(epoch=eval_step, logs={'dev_acc':  dev_acc,  'dev_loss':  dev_loss})
-        model.save(self.model_save_dir + 'epoch={}-tloss={}-tacc={}.model'.format(eval_step, test_loss, test_acc))
+        self.model.save(self.model_save_dir + 'epoch={}-tloss={}-tacc={}.model'.format(eval_step, test_loss, test_acc))
 
         return test_loss, dev_loss
 
@@ -130,11 +134,11 @@ if __name__ == '__main__':
     parser.add_argument('--growth_rate',                 default=20,        help='Growth rate (DenseNet)',                  type=int)
     parser.add_argument('--layers_per_dense_block',      default=8,         help='Layers in one Dense block (DenseNet)',    type=int)
     parser.add_argument('--dense_blocks',                default=3,         help='Number of Dense blocks (DenseNet)',       type=int)
-    parser.add_argument('--labels',                      default=3,         help='Number of output labels',                 type=int)
-    parser.add_argument('--load_dir',                    default='data',    help='Directory of the data',   type=str)
-    parser.add_argument('--models_dir',                  default='models/', help='Where to save models',    type=str)
-    parser.add_argument('--logdir',                      default='logs',    help='Tensorboard logs dir',    type=str)
-    parser.add_argument('--word_vec_path', default='data/word-vectors.npy', help='Save path word vectors',  type=str)
+    parser.add_argument('--labels',                      default=2,         help='Number of output labels',                 type=int)
+    parser.add_argument('--load_dir',                    default='data/lcqmc',    help='Directory of the data',   type=str)
+    parser.add_argument('--models_dir',                  default='models2/', help='Where to save models',    type=str)
+    parser.add_argument('--logdir',                      default='logs2',    help='Tensorboard logs dir',    type=str)
+    parser.add_argument('--word_vec_path', default='data/lcqmc-word-vectors.npy', help='Save path word vectors',  type=str)
     parser.add_argument('--omit_word_vectors',           action='store_true')
     parser.add_argument('--omit_chars',                  action='store_true')
     parser.add_argument('--omit_syntactical_features',   action='store_true')
@@ -153,10 +157,10 @@ if __name__ == '__main__':
     chars_per_word = train_data[3].shape[-1] if not args.omit_chars else 0  # 16
     syntactical_feature_size = train_data[5].shape[-1] if not args.omit_syntactical_features else 0  # 47
 
-    ''' 准备模型和优化器 '''
-    adam = L2Optimizer(Adam(), args.l2_full_step, args.l2_full_ratio, args.l2_diference_penalty)
-    adagrad = L2Optimizer(Adagrad(), args.l2_full_step, args.l2_full_ratio, args.l2_diference_penalty)
-    sgd = L2Optimizer(SGD(lr=3e-3), args.l2_full_step, args.l2_full_ratio, args.l2_diference_penalty)
+    # ''' 准备模型和优化器 '''
+    # adam = L2Optimizer(Adam(), args.l2_full_step, args.l2_full_ratio, args.l2_diference_penalty)
+    # adagrad = L2Optimizer(Adagrad(), args.l2_full_step, args.l2_full_ratio, args.l2_diference_penalty)
+    # sgd = L2Optimizer(SGD(lr=3e-3), args.l2_full_step, args.l2_full_ratio, args.l2_diference_penalty)
 
     model = DIIN(p=train_data[0].shape[-1],  # or None
                  h=train_data[1].shape[-1],  # or None
@@ -182,10 +186,52 @@ if __name__ == '__main__':
                  nb_labels=args.labels)
 
     ''' Initialize Gym for training '''
-    gym = Gym(model=model,
-              train_data=train_data, test_data=test_data, dev_data=dev_data,
-              optimizers=[(adam, 3), (adagrad, 4), (sgd, 15)],
-              logger=TensorBoard(log_dir=args.logdir),
-              models_save_dir=args.models_dir)
+    # gym = Gym(model=model,
+    #           train_data=train_data, test_data=test_data, dev_data=dev_data,
+    #           optimizers=[(adam, 3), (adagrad, 4), (sgd, 15)],
+    #           logger=TensorBoard(log_dir=args.logdir),
+    #           models_save_dir=args.models_dir)
+    #
+    # gym.train(batch_size=args.batch_size, eval_interval=args.eval_interval, shuffle=True)
+    adam = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=1e-6, amsgrad=False)
 
-    gym.train(batch_size=args.batch_size, eval_interval=args.eval_interval, shuffle=True)
+    # 调用compile之前实例化了一个优化器。
+    model.compile(loss='binary_crossentropy', optimizer=adam, metrics=['acc'])
+
+    # 我们也可以通过传递名字的方式调用默认的优化器
+    # model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['acc'])
+
+    plot_model(model, to_file='model.png')
+
+    early_stopping = EarlyStopping(monitor='val_loss', patience=3)
+
+    model_checkpoint = ModelCheckpoint(filepath=os.path.join(args.models_dir,
+                'checkpoint-{epoch:02d}-{val_loss:.2f}-{val_acc:.3f}.hdf5'),
+                save_best_only=True, save_weights_only=False)
+
+    tb = TensorBoard(log_dir=args.logdir,  # log 目录
+                     histogram_freq=1,  # 按照何等频率（epoch）来计算直方图，0为不计算
+                     batch_size=32,  # 用多大量的数据计算直方图
+                     write_graph=True,  # 是否存储网络结构图
+                     write_grads=False,  # 是否可视化梯度直方图
+                     write_images=False,  # 是否可视化参数
+                     embeddings_freq=0,
+                     embeddings_layer_names=None,
+                     embeddings_metadata=None)
+
+    print(model.summary())
+    
+    hist = model.fit(train_data[:-1], train_data[-1], validation_data=(dev_data[:-1], dev_data[-1]),
+              epochs=100, batch_size=args.batch_size, shuffle=True,
+              callbacks=[early_stopping, model_checkpoint, tb])
+
+
+    bst_score = min(hist.history['loss'])
+    bst_acc = max(hist.history['acc'])
+    print(bst_acc, bst_score)
+
+    print('模型评估')
+    list_of_metrics = model.evaluate(x=test_data[:-1], y=test_data[-1], batch_size=args.batch_size)
+
+    for index, metric in enumerate(model.metrics_names):
+        print(metric + ':', str(list_of_metrics[index]))

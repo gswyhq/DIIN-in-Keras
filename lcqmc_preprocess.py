@@ -4,14 +4,14 @@ import argparse
 import io
 import json
 import os
-
+from jieba import posseg
+from keras.utils import np_utils
+import gensim #导入gensim包
 import numpy as np
 from keras.preprocessing.sequence import pad_sequences
 from tqdm import tqdm
-
 from util import get_snli_file_path, get_word2vec_file_path, ChunkDataManager
-from lcqmc_preprocess import LCQMCPreprocessor
-from lcqmc_preprocess import preprocess as lcqmc_preprocess
+from gensim.models import KeyedVectors
 
 def pad(x, maxlen):
     if len(x) <= maxlen:
@@ -38,8 +38,9 @@ class BasePreprocessor(object):
         """
         with open(file_path) as f:
             lines = f.readlines()
-            text = '[' + ','.join(lines) + ']'
-            return json.loads(text)
+            datas = [t.strip().split('\t') for t in lines]
+            # datas = datas[:len(datas)//20]
+            return [[t[0], t[1], int(t[2])] for t in datas if len(t)==3]
 
     @staticmethod
     def load_word_vectors(file_path, separator=' ', normalize=True, max_words=None):
@@ -49,33 +50,18 @@ class BasePreprocessor(object):
         seen_words = set()
         words = []
         vectors = []
-        vector_size = None
+
         print('Loading', file_path)
-        with io.open(file_path, mode='r', encoding='utf-8') as f:
-            for line in tqdm(f):
-                values = line.replace(' \n', '').split(separator)
-                word = values[0]
-                if len(values) < 10 or word in seen_words:
-                    print('Invalid word:', word)
-                    continue
-
-                seen_words.add(word)
-                vec = np.asarray(values[1:], dtype='float32')
-                if normalize:
-                    vec /= np.linalg.norm(vec, ord=2)
-
-                if vector_size is None:
-                    vector_size = len(vec)
-                elif len(vec) != vector_size:
-                    print('Skipping', word)
-                    continue
-
-                words.append(word)
-                vectors.append(vec)
-                if max_words and len(words) >= max_words:
-                    break
-
-        vectors = np.array(vectors, dtype='float32', copy=False)
+        if 'Tencent_AILab_ChineseEmbedding' in file_path:
+            wv_from_text = KeyedVectors.load_word2vec_format(file_path, binary=False)
+            words = wv_from_text.wv.index2word
+            vectors = np.array([wv_from_text.get_vector(word) for word in words], dtype='float32', copy=False)
+        else:
+            model = gensim.models.Word2Vec.load(file_path)  # 加载词向量模型
+            words = model.wv.index2word
+            vector_size = model.vector_size
+            vectors = [model.wv.get_vector(word) for word in words]
+            vectors = np.array(vectors, dtype='float32', copy=False)
         return words, vectors
 
     def get_words_with_part_of_speech(self, sentence):
@@ -98,9 +84,9 @@ class BasePreprocessor(object):
         """
         all_words = [] # 所有的数据（训练、验证、测试）中的词组成的列表
         all_parts_of_speech = [] # 所有的数据（训练、验证、测试）中的词对应的词性组成的列表
-        # ['/home/gswyhq/github_projects/DIIN-in-Keras/data/snli_1.0/snli_1.0_train.jsonl',
-        # '/home/gswyhq/github_projects/DIIN-in-Keras/data/snli_1.0/snli_1.0_test.jsonl',
-        # '/home/gswyhq/github_projects/DIIN-in-Keras/data/snli_1.0/snli_1.0_dev.jsonl']
+        # ['/home/gswyhq/data/LCQMC/train.txt',
+        # '/home/gswyhq/data/LCQMC/test.txt',
+        # '/home/gswyhq/data/LCQMC/dev.txt']
         for file_path in file_paths:
             data = self.load_data(file_path=file_path)
             # data[0]
@@ -120,13 +106,13 @@ class BasePreprocessor(object):
             #  'sentence2_binary_parse': '( ( The sisters ) ( ( are ( ( hugging goodbye ) ( while ( holding ( to ( ( go packages ) ( after ( just ( eating lunch ) ) ) ) ) ) ) ) ) . ) )',
             #  'sentence2_parse': '(ROOT (S (NP (DT The) (NNS sisters)) (VP (VBP are) (VP (VBG hugging) (NP (UH goodbye)) (PP (IN while) (S (VP (VBG holding) (S (VP (TO to) (VP (VB go) (NP (NNS packages)) (PP (IN after) (S (ADVP (RB just)) (VP (VBG eating) (NP (NN lunch))))))))))))) (. .)))'}
 
-            for sample in tqdm(data):
+            for premise, hypothesis, label in tqdm(data):
                 # sentence1_parse, sentence2_parse
                 # premise, hypothesis
                 # Out[21]:
                 # ('(ROOT (S (NP (CD Two) (NNS women)) (VP (VBP are) (VP (VBG embracing) (SBAR (IN while) (S (NP (VBG holding)) (VP (TO to) (VP (VB go) (NP (NNS packages)))))))) (. .)))',
                 # '(ROOT (S (NP (DT The) (NNS sisters)) (VP (VBP are) (VP (VBG hugging) (NP (UH goodbye)) (PP (IN while) (S (VP (VBG holding) (S (VP (TO to) (VP (VB go) (NP (NNS packages)) (PP (IN after) (S (ADVP (RB just)) (VP (VBG eating) (NP (NN lunch))))))))))))) (. .)))')
-                premise, hypothesis = self.get_sentences(sample)
+                # premise, hypothesis = self.get_sentences(sample)
                 premise_words,    premise_speech    = self.get_words_with_part_of_speech(premise)
                 # print(premise_words, premise_speech)
                 # ['Two', 'women', 'are', 'embracing', 'while', 'holding', 'to', 'go', 'packages', '.']
@@ -135,7 +121,7 @@ class BasePreprocessor(object):
                 # print(hypothesis_words, hypothesis_speech)
                 # ['The', 'sisters', 'are', 'hugging', 'goodbye', 'while', 'holding', 'to', 'go', 'packages', 'after','just', 'eating', 'lunch', '.']
                 # ['DT', 'NNS', 'VBP', 'VBG', 'UH', 'IN', 'VBG', 'TO', 'VB', 'NNS', 'IN', 'RB', 'VBG', 'NN', '.']
-                all_words           += premise_words  + hypothesis_words
+                all_words           += premise_words  + hypothesis_words + list(premise) + list(hypothesis)
                 all_parts_of_speech += premise_speech + hypothesis_speech
 
         self.unique_words           = set(all_words)
@@ -210,6 +196,10 @@ class BasePreprocessor(object):
     def save_word_vectors(self, file_path):
         np.save(file_path, self.vectors)
 
+        word2id_path = os.path.splitext(file_path)[0] + '-word2id.json'
+        with open(word2id_path, 'w')as f:
+            json.dump(self.word_to_id, f, ensure_ascii=False)
+
     def get_label(self, sample):
         return NotImplementedError
 
@@ -218,6 +208,7 @@ class BasePreprocessor(object):
 
     def label_to_one_hot(self, label):
         label_set = self.get_labels()
+        # print('label_set, {}'.format(label_set))
         res = np.zeros(shape=(len(label_set)), dtype=np.bool)
         i = label_set.index(label)
         res[i] = 1
@@ -242,8 +233,9 @@ class BasePreprocessor(object):
         syntactical_one_hot = np.eye(len(self.part_of_speech_to_id) + 2)[syntactical_features]  # 将词性转换成0-1向量；
 
         # Chars
-        chars = [[self.char_to_id[c] for c in word] for word in words]
-        chars = pad_sequences(chars, maxlen=chars_per_word, padding='post', truncating='post')  # 不足长度在尾部补0，超长截断
+        # chars = [[self.char_to_id[c] for c in word] for word in words]
+        # chars = pad_sequences(chars, maxlen=chars_per_word, padding='post', truncating='post')  # 不足长度在尾部补0，超长截断
+        char_ids = [self.word_to_id[w] for w in sentence]
         # chars.shape
         # Out[60]: (10, 16)
         # syntactical_features
@@ -255,9 +247,13 @@ class BasePreprocessor(object):
         # pad(chars, max_words).shape
         # Out[65]: (32, 16)
 
+        # return (words, parts_of_speech, np.array(word_ids, copy=False),
+        #         syntactical_features, pad(syntactical_one_hot, max_words),
+        #         pad(chars, max_words))
+
         return (words, parts_of_speech, np.array(word_ids, copy=False),
                 syntactical_features, pad(syntactical_one_hot, max_words),
-                pad(chars, max_words))
+                np.array(char_ids, copy=False))
 
     def parse_one(self, premise, hypothesis, max_words_p, max_words_h, chars_per_word):
         """
@@ -267,18 +263,18 @@ class BasePreprocessor(object):
         :param max_words_h: maximum number of words in hypothesis
         :param chars_per_word: number of chars in each word
         :return: (premise_word_ids, hypothesis_word_ids,
-                  premise_chars, hypothesis_chars,
+                  premise_char_ids, hypothesis_char_ids,
                   premise_syntactical_one_hot, hypothesis_syntactical_one_hot,
                   premise_exact_match, hypothesis_exact_match)
         """
         # 词列表、词性列表、词id列表、词性id列表、词性填充补全矩阵；字填充补全矩阵；
         (premise_words, premise_parts_of_speech, premise_word_ids,
          premise_syntactical_features, premise_syntactical_one_hot,
-         premise_chars) = self.parse_sentence(sentence=premise, max_words=max_words_p, chars_per_word=chars_per_word)
+         premise_char_ids) = self.parse_sentence(sentence=premise, max_words=max_words_p, chars_per_word=chars_per_word)
 
         (hypothesis_words, hypothesis_parts_of_speech, hypothesis_word_ids,
          hypothesis_syntactical_features, hypothesis_syntactical_one_hot,
-         hypothesis_chars) = self.parse_sentence(sentence=hypothesis, max_words=max_words_h, chars_per_word=chars_per_word)
+         hypothesis_char_ids) = self.parse_sentence(sentence=hypothesis, max_words=max_words_h, chars_per_word=chars_per_word)
 
         def calculate_exact_match(source_words, target_words):
             source_words = [word.lower() for word in source_words]
@@ -295,7 +291,7 @@ class BasePreprocessor(object):
         # array([False, False,  True, False, False,  True,  True,  True,  True, True, False, False, False, False,  True])
 
         return (premise_word_ids, hypothesis_word_ids,
-                premise_chars, hypothesis_chars,
+                premise_char_ids, hypothesis_char_ids,
                 premise_syntactical_one_hot, hypothesis_syntactical_one_hot,
                 premise_exact_match, hypothesis_exact_match)
 
@@ -306,23 +302,23 @@ class BasePreprocessor(object):
         :param max_words_h: maximum number of words in hypothesis
         :param chars_per_word: number of chars in each word (padding is applied if not enough)
         :return: (premise_word_ids, hypothesis_word_ids,
-                  premise_chars, hypothesis_chars,
+                  premise_char_ids, hypothesis_char_ids,
                   premise_syntactical_one_hot, hypothesis_syntactical_one_hot,
                   premise_exact_match, hypothesis_exact_match)
         """
-        # res = [premise_word_ids, hypothesis_word_ids, premise_chars, hypothesis_chars,
+        # res = [premise_word_ids, hypothesis_word_ids, premise_char_ids, hypothesis_char_ids,
         # premise_syntactical_one_hot, hypothesis_syntactical_one_hot, premise_exact_match, hypothesis_exact_match]
         res = [[], [], [], [], [], [], [], [], []]
         # 句1词id列表,句2词id列表,句1字填充补全矩阵,句2字填充补全矩阵,句1词性填充补全矩阵,句2词性填充补全矩阵,句1对应词对方是否包含,句2对应词对方是否包含,标签
 
-        data = self.load_data(input_file_path)
-        for sample in tqdm(data):
+        data = self.load_data(input_file_path)  # q1, q2, label
+        for premise, hypothesis, label in tqdm(data):
             # As stated in paper: The labels are "entailment", "neutral", "contradiction" and "-".
             # "-"  shows that annotators can't reach consensus with each other, thus removed during training and testing
-            label = self.get_label(sample=sample)  # 可选的标签值有： {'-', 'contradiction', 'entailment', 'neutral'}
-            if label == '-':
-                continue
-            premise, hypothesis = self.get_sentences(sample=sample)
+            # label = self.get_label(sample=sample)  # 可选的标签值有： {'-', 'contradiction', 'entailment', 'neutral'}
+            # if label == '-':
+            #     continue
+            # premise, hypothesis = self.get_sentences(sample=sample)
             # (ROOT (S (NP (CD Two) (NNS women)) (VP (VBP are) (VP (VBG embracing) (SBAR (IN while) (S (NP (VBG holding)) (VP (TO to) (VP (VB go) (NP (NNS packages)))))))) (. .)))
             # (ROOT (S (NP (DT The) (NNS sisters)) (VP (VBP are) (VP (VBG hugging) (NP (UH goodbye)) (PP (IN while) (S (VP (VBG holding) (S (VP (TO to) (VP (VB go) (NP (NNS packages)) (PP (IN after) (S (ADVP (RB just)) (VP (VBG eating) (NP (NN lunch))))))))))))) (. .)))
 
@@ -331,29 +327,31 @@ class BasePreprocessor(object):
                                            chars_per_word=chars_per_word)
             # 词id列表，字填充补全矩阵，词性填充补全矩阵，对应词对方是否包含
 
-            label = self.label_to_one_hot(label=label)
-
+            # label = self.label_to_one_hot(label=label)
+            label = list(np_utils.to_categorical(label, num_classes=2))
             sample_result = list(sample_inputs) + [label]
             for res_item, parsed_item in zip(res, sample_result):
                 res_item.append(parsed_item)
 
         res[0] = pad_sequences(res[0], maxlen=max_words_p, padding='post', truncating='post', value=0.)  # input_word_p
         res[1] = pad_sequences(res[1], maxlen=max_words_h, padding='post', truncating='post', value=0.)  # input_word_h
+
+        res[2] = pad_sequences(res[2], maxlen=max_words_p, padding='post', truncating='post', value=0.)  # input_word_p
+        res[3] = pad_sequences(res[3], maxlen=max_words_h, padding='post', truncating='post', value=0.)  # input_word_h
+
         res[6] = pad_sequences(res[6], maxlen=max_words_p, padding='post', truncating='post', value=0.)  # exact_match_p
         res[7] = pad_sequences(res[7], maxlen=max_words_h, padding='post', truncating='post', value=0.)  # exact_match_h
         return res
 
 
-class SNLIPreprocessor(BasePreprocessor):
+class LCQMCPreprocessor(BasePreprocessor):
     def get_words_with_part_of_speech(self, sentence):
-        parts = sentence.split('(')
+
         words = []
         parts_of_speech = []
-        for p in parts:
-            if ')' in p:
-                res = p.split(' ')
-                parts_of_speech.append(res[0])
-                words.append(res[1].replace(')', ''))
+        for word, flag in posseg.cut(sentence):
+            parts_of_speech.append(flag)
+            words.append(word)
         return words, parts_of_speech
 
     def get_sentences(self, sample):
@@ -363,7 +361,7 @@ class SNLIPreprocessor(BasePreprocessor):
         return sample['gold_label']
 
     def get_labels(self):
-        return 'entailment', 'contradiction', 'neutral'
+        return [0, 1]
 
 
 def preprocess(p, h, chars_per_word, preprocessor, save_dir, data_paths,
@@ -376,19 +374,20 @@ def preprocess(p, h, chars_per_word, preprocessor, save_dir, data_paths,
     print('Found', len(preprocessor.unique_parts_of_speech), 'unique parts of speech')
 
     # Init mappings of the preprocessor
-    preprocessor.init_word_to_vectors(vectors_file_path=get_word2vec_file_path(word_vectors_load_path),
+    preprocessor.init_word_to_vectors(vectors_file_path=word_vectors_load_path,
                                       needed_words=preprocessor.unique_words,
                                       normalize=normalize_word_vectors,
                                       max_loaded_word_vectors=max_loaded_word_vectors)
-    preprocessor.init_chars(words=preprocessor.unique_words)
+    # preprocessor.init_chars(words=preprocessor.unique_words)
+
     preprocessor.init_parts_of_speech(parts_of_speech=preprocessor.unique_parts_of_speech)
 
     # 预处理及保存数据；
     preprocessor.save_word_vectors(word_vector_save_path)  # 保存相关词（包括缺失词向量的词随机初始化的词向量）的向量到文件
     for dataset, input_path in data_paths:
-        # [('train', '/home/gswyhq/github_projects/DIIN-in-Keras/data/snli_1.0/snli_1.0_train.jsonl'),
-        #  ('test', '/home/gswyhq/github_projects/DIIN-in-Keras/data/snli_1.0/snli_1.0_test.jsonl'),
-        #  ('dev', '/home/gswyhq/github_projects/DIIN-in-Keras/data/snli_1.0/snli_1.0_dev.jsonl')]
+        # [('train', '/home/gswyhq/data/LCQMC/train.txt'),
+        #  ('test', '/home/gswyhq/data/LCQMC/test.txt'),
+        #  ('dev', '/home/gswyhq/data/LCQMC/dev.txt')]
         data = preprocessor.parse(input_file_path=input_path,
                                   max_words_p=p,
                                   max_words_h=h,
@@ -411,10 +410,11 @@ if __name__ == '__main__':
     parser.add_argument('--h',              default=32,         help='Maximum words in hypothesis',         type=int)
     parser.add_argument('--chars_per_word', default=16,         help='Number of characters in one word',    type=int)
     parser.add_argument('--max_word_vecs',  default=None,       help='Maximum number of word vectors',      type=int)
-    parser.add_argument('--save_dir',       default='data/',    help='Save directory of data',              type=str)
-    parser.add_argument('--dataset',        default='snli',     help='Which preprocessor to use',           type=str)
-    parser.add_argument('--word_vec_load_path', default=None,   help='Path to load word vectors',           type=str)
-    parser.add_argument('--word_vec_save_path', default='data/word-vectors.npy', help='Path to save vectors', type=str)
+    parser.add_argument('--train_data_dir',       default='/home/gswyhq/data/LCQMC',    help='训练语料路径',              type=str)
+    parser.add_argument('--save_dir',       default='data/lcqmc/',    help='Save directory of data',              type=str)
+    parser.add_argument('--dataset',        default='lcqmc',     help='Which preprocessor to use',           type=str)
+    parser.add_argument('--word_vec_load_path', default="/home/gswyhq/data/WordVector_60dimensional/wiki.zh.text.model",   help='Path to load word vectors',           type=str)
+    parser.add_argument('--word_vec_save_path', default='data/lcqmc-word-vectors.npy', help='Path to save vectors', type=str)
     parser.add_argument('--normalize_word_vectors',      action='store_true')
     parser.add_argument('--omit_word_vectors',           action='store_true')
     parser.add_argument('--omit_chars',                  action='store_true')
@@ -422,33 +422,14 @@ if __name__ == '__main__':
     parser.add_argument('--omit_exact_match',            action='store_true')
     args = parser.parse_args()
 
-    if args.dataset == 'snli':
-        snli_preprocessor = SNLIPreprocessor()
-        path = get_snli_file_path()
-        train_path = os.path.join(path, 'snli_1.0_train.jsonl')
-        test_path  = os.path.join(path, 'snli_1.0_test.jsonl')
-        dev_path   = os.path.join(path, 'snli_1.0_dev.jsonl')
-
-        preprocess(p=args.p, h=args.h, chars_per_word=args.chars_per_word,
-                   preprocessor=snli_preprocessor,
-                   save_dir=args.save_dir,
-                   data_paths=[('train', train_path), ('test', test_path), ('dev', dev_path)],
-                   word_vectors_load_path=args.word_vec_load_path,
-                   normalize_word_vectors=args.normalize_word_vectors,
-                   word_vector_save_path=args.word_vec_save_path,
-                   max_loaded_word_vectors=args.max_word_vecs,
-                   include_word_vectors=not args.omit_word_vectors,
-                   include_chars=not args.omit_chars,
-                   include_syntactical_features=not args.omit_syntactical_features,
-                   include_exact_match=not args.omit_exact_match)
-    elif args.dataset == 'lcqmc':
+    if args.dataset == 'lcqmc':
         lcqmc_preprocessor = LCQMCPreprocessor()
-        path = '/home/gswyhq/data/LCQMC'
+        path = args.train_data_dir # '/home/gswyhq/data/LCQMC' # /notebooks/data/LCQMC
         train_path = os.path.join(path, 'train.txt')
         test_path  = os.path.join(path, 'test.txt')
         dev_path   = os.path.join(path, 'dev.txt')
 
-        lcqmc_preprocess(p=args.p, h=args.h, chars_per_word=args.chars_per_word,
+        preprocess(p=args.p, h=args.h, chars_per_word=args.chars_per_word,
                    preprocessor=lcqmc_preprocessor,
                    save_dir=args.save_dir,
                    data_paths=[('train', train_path), ('test', test_path), ('dev', dev_path)],
@@ -460,6 +441,5 @@ if __name__ == '__main__':
                    include_chars=not args.omit_chars,
                    include_syntactical_features=not args.omit_syntactical_features,
                    include_exact_match=not args.omit_exact_match)
-
     else:
         raise ValueError('couldn\'t find implementation for specified dataset')
