@@ -59,7 +59,10 @@ class DIIN(Model):
         premise_embeddings = []
         hypothesis_embeddings = []
 
-        '''Embedding layer'''
+        '''Embedding Layer: 将词或者短语转换为向量表示, 并构造句子的矩阵表示.
+            可以直接使用预训练的词向量, 比如word2vec, glove等等.
+            为了提高效果, 还可以利用词性标注, 命名实体识别等方法获取更多词汇和句法信息.
+            '''
         # 1. Word embedding input
         if include_word_vectors:
             premise_word_input    = Input(shape=(p,), dtype='int64', name='PremiseWordInput')
@@ -138,12 +141,18 @@ class DIIN(Model):
         hypothesis_embedding = Concatenate(name='HypothesisEmbedding')(hypothesis_embeddings)
         d = K.int_shape(hypothesis_embedding)[-1]
 
-        '''Encoding layer'''
+        '''Encoding Layer
+        对Embedding Layer的输出进行编码, 
+        这部分可以选择不同的编码器, 比如BiLSTM, self-attention等等. 不同的编码器可以结合使用来获得更好的句表示.
+        '''
         # Now we have the embedded premise [pxd] along with embedded hypothesis [hxd]
         premise_encoding    = Encoding(name='PremiseEncoding')(premise_embedding)
         hypothesis_encoding = Encoding(name='HypothesisEncoding')(hypothesis_embedding)
 
-        '''Interaction layer'''
+        '''Interaction Layer
+        生成premise和hypothesis之间的interaction tensor.
+        Interaction有多种不同的建模方式, 比如计算余弦距离, 点积等等.
+        '''
         interaction = Interaction(name='Interaction')([premise_encoding, hypothesis_encoding])
 
         '''Feature Extraction layer'''
