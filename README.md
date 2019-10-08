@@ -81,6 +81,11 @@ nohup python3 train.py --batch_size 24 --train_word_embeddings --load_dir ./data
 tensorboard --logdir=./logs
 ```
 
+* 测试
+```
+python3 predict.py 
+```
+
 ### 结果(Results)
 Currently we managed to obtain `87.34%` accuracy on `SNLI test` set, while the authors obtained `88.0%` accuracy on the same dataset. <br/>
 Our best model can be downloaded from the first release v1.0: https://github.com/YerevaNN/DIIN-in-Keras/releases/download/v1.0/epoch.40-tloss.0.358379300162-tacc.0.873371346062.model

@@ -200,6 +200,10 @@ class BasePreprocessor(object):
         with open(word2id_path, 'w')as f:
             json.dump(self.word_to_id, f, ensure_ascii=False)
 
+        part_of_speech_to_id_path = os.path.splitext(file_path)[0] + '-speech2id.json'
+        with open(part_of_speech_to_id_path, 'w')as f:
+            json.dump(self.part_of_speech_to_id, f, ensure_ascii=False)
+
     def get_label(self, sample):
         return NotImplementedError
 
