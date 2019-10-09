@@ -231,6 +231,7 @@ class BasePreprocessor(object):
         # ['Two', 'women', 'are', 'embracing', 'while', 'holding', 'to', 'go', 'packages', '.']
         # ['CD', 'NNS', 'VBP', 'VBG', 'IN', 'VBG', 'TO', 'VB', 'NNS', '.']
         word_ids = [self.word_to_id[word] for word in words]
+        # print('words: {}, parts_of_speech: {}, word_ids: {}'.format(words, parts_of_speech, word_ids))
 
         # Syntactical features
         syntactical_features = [self.part_of_speech_to_id[part] for part in parts_of_speech]

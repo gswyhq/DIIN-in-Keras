@@ -83,7 +83,13 @@ tensorboard --logdir=./logs
 
 * 测试
 ```
-python3 predict.py 
+root@356109750f99:/diin# python3 predict.py 云赚钱怎么样  怎么才能赚钱
+
+`云赚钱怎么样`与`怎么才能赚钱`，预测结果：0，及其概率：0.6797731518745422
+0: 矛盾
+1: 蕴含
+
+docker run --rm -it -w /diin gswyhq/diin-in-keras python3 predict.py 云赚钱怎么样  怎么才能赚钱
 ```
 
 ### 结果(Results)
